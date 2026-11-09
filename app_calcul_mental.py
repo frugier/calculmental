@@ -7,7 +7,10 @@ import streamlit as st
 # Configuration de la page
 st.set_page_config(page_title="Test de Calcul Mental", layout="centered")
 
-# Chargement automatique des calculs depuis le fichier JSON[cite: 2]
+# Mot de passe secret dans l'URL (ex: ton-app.streamlit.app/?admin=prof123)
+SECRET_ADMIN_KEY = "prof123"
+
+# Chargement automatique des calculs depuis le fichier JSON
 @st.cache_data
 def charger_calculs():
     with open("calculs.json", "r", encoding="utf-8") as f:
@@ -29,13 +32,69 @@ def get_global_database():
 
 db = get_global_database()
 
-# Barre latérale : Commutateur Vue Élève / Vue Enseignant
-mode_vue = st.sidebar.radio("Mode d'affichage", ["Smartphone Élève", "Tableau de Bord Enseignant"])
+# Vérification discrète via l'URL (aucun menu visible pour les élèves)
+query_params = st.query_params
+is_admin = query_params.get("admin") == SECRET_ADMIN_KEY
 
 # ---------------------------------------------------------
-# MODE 1 : INTERFACE SMARTPHONE ÉLÈVE
+# MODE 2 : TABLEAU DE BORD ENSEIGNANT (Si ?admin=prof123 dans l'URL)
 # ---------------------------------------------------------
-if mode_vue == "Smartphone Élève":
+if is_admin:
+    st.title("Tableau de bord - Suivi de classe")
+    st.divider()
+    
+    if db["scores"]:
+        data_tableau = []
+        for pseudo, score in db["scores"].items():
+            nb_traites = db["details"].get(pseudo, {}).get("nb_traites", 0)
+            data_tableau.append({
+                "Élève": pseudo,
+                "Score": score,
+                "Calculs traités": nb_traites
+            })
+            
+        df = pd.DataFrame(data_tableau)
+        df = df.sort_values(by="Score", ascending=False).reset_index(drop=True)
+        df.index += 1
+        
+        st.write(f"Nombre total de participants : **{len(db['scores'])}**")
+        st.dataframe(df, use_container_width=True)
+        
+        st.divider()
+        st.subheader("Analyse par élève")
+        eleve_selectionne = st.selectbox("Sélectionner un élève :", list(db["scores"].keys()))
+        
+        if eleve_selectionne:
+            st.write(f"Détails des réponses pour **{eleve_selectionne}** :")
+            reps_eleve = db["responses"].get(eleve_selectionne, {})
+            
+            for cid, val in reps_eleve.items():
+                calc_trouve = next((c for c in CALCULS if c["id"] == cid), None)
+                if calc_trouve:
+                    attendu = float(calc_trouve["reponse"])
+                    correct = False
+                    if val is not None:
+                        try:
+                            if float(val) == attendu:
+                                correct = True
+                        except ValueError:
+                            pass
+                    statut = "Correct" if correct else ("Passé" if val is None else "Incorrect")
+                    st.write(f"- `{calc_trouve['question']}` -> Réponse : **{val}** (Attendu : {calc_trouve['reponse']}) → *{statut}*")
+    else:
+        st.info("Aucun résultat enregistré pour le moment.")
+        
+    st.divider()
+    if st.button("Réinitialiser les données de session"):
+        db["scores"].clear()
+        db["responses"].clear()
+        db["details"].clear()
+        st.rerun()
+
+# ---------------------------------------------------------
+# MODE 1 : INTERFACE SMARTPHONE ÉLÈVE (Par défaut)
+# ---------------------------------------------------------
+else:
     # Initialisation des états de session élève
     if "etape" not in st.session_state:
         st.session_state.etape = "login"
@@ -126,7 +185,6 @@ if mode_vue == "Smartphone Élève":
         
         if st.button("Lancer le Défi", type="primary", use_container_width=True):
             if mot_de_passe.strip():
-                # Normalisation du mot de passe en minuscules pour ne pas être sensible à la casse
                 mdp_clean = mot_de_passe.strip().lower()
                 st.session_state.mode_jeu = f"Défi ({mot_de_passe.strip()})"
                 session_calculs = list(CALCULS)
@@ -240,58 +298,3 @@ if mode_vue == "Smartphone Élève":
             st.session_state.calculs_session = []
             st.session_state.start_time = None
             st.rerun()
-
-# ---------------------------------------------------------
-# MODE 2 : TABLEAU DE BORD ENSEIGNANT
-# ---------------------------------------------------------
-else:
-    st.title("Tableau de bord - Suivi de classe")
-    st.divider()
-    
-    if db["scores"]:
-        data_tableau = []
-        for pseudo, score in db["scores"].items():
-            nb_traites = db["details"].get(pseudo, {}).get("nb_traites", 0)
-            data_tableau.append({
-                "Élève": pseudo,
-                "Score": score,
-                "Calculs traités": nb_traites
-            })
-            
-        df = pd.DataFrame(data_tableau)
-        df = df.sort_values(by="Score", ascending=False).reset_index(drop=True)
-        df.index += 1
-        
-        st.write(f"Nombre total de participants : **{len(db['scores'])}**")
-        st.dataframe(df, use_container_width=True)
-        
-        st.divider()
-        st.subheader("Analyse par élève")
-        eleve_selectionne = st.selectbox("Sélectionner un élève :", list(db["scores"].keys()))
-        
-        if eleve_selectionne:
-            st.write(f"Détails des réponses pour **{eleve_selectionne}** :")
-            reps_eleve = db["responses"].get(eleve_selectionne, {})
-            
-            for cid, val in reps_eleve.items():
-                calc_trouve = next((c for c in CALCULS if c["id"] == cid), None)
-                if calc_trouve:
-                    attendu = float(calc_trouve["reponse"])
-                    correct = False
-                    if val is not None:
-                        try:
-                            if float(val) == attendu:
-                                correct = True
-                        except ValueError:
-                            pass
-                    statut = "Correct" if correct else ("Passé" if val is None else "Incorrect")
-                    st.write(f"- `{calc_trouve['question']}` -> Réponse : **{val}** (Attendu : {calc_trouve['reponse']}) → *{statut}*")
-    else:
-        st.info("Aucun résultat enregistré pour le moment.")
-        
-    st.divider()
-    if st.button("Réinitialiser les données de session"):
-        db["scores"].clear()
-        db["responses"].clear()
-        db["details"].clear()
-        st.rerun()
