@@ -90,9 +90,15 @@ elif st.session_state.etape == "test":
     st.markdown(f"<h1 style='text-align: center; font-size: 2.5rem;'>{calc['question']} = ?</h1>", unsafe_allow_html=True)
     st.write("")
     
-    # Formulaire de réponse avec boutons Valider et Passer
+    # st.number_input avec value=None force l'affichage du pavé numérique sur smartphone
     with st.form(key=f"form_q_{idx}"):
-        reponse_saisie = st.text_input("Ta réponse :", key=f"input_q_{calc['id']}", label_visibility="collapsed")
+        reponse_saisie = st.number_input(
+            "Ta réponse :", 
+            value=None, 
+            format="%g", 
+            key=f"input_q_{calc['id']}", 
+            label_visibility="collapsed"
+        )
         
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
@@ -107,7 +113,7 @@ elif st.session_state.etape == "test":
             st.session_state.etape = "fin"
         st.rerun()
     elif btn_passer:
-        st.session_state.reponses_eleve[calc['id']] = ""  # Vide si passé
+        st.session_state.reponses_eleve[calc['id']] = None
         st.session_state.current_index += 1
         if st.session_state.current_index >= len(calculs_session):
             st.session_state.etape = "fin"
@@ -124,14 +130,15 @@ elif st.session_state.etape == "fin":
     score = 0
     for calc in calculs_session:
         cid = calc['id']
-        rep = str(st.session_state.reponses_eleve.get(cid, "")).strip().replace(",", ".")
-        attendu = str(calc["reponse"])
-        try:
-            if float(rep) == float(attendu):
-                score += 1
-        except ValueError:
-            if rep.lower() == attendu.lower():
-                score += 1
+        val_eleve = st.session_state.reponses_eleve.get(cid, None)
+        attendu = float(calc["reponse"])
+        
+        if val_eleve is not None:
+            try:
+                if float(val_eleve) == attendu:
+                    score += 1
+            except ValueError:
+                pass
                 
     st.write(f"Candidat : **{st.session_state.pseudo}**")
     st.success(f"Score final : **{score} / {len(calculs_session)}**")
@@ -141,21 +148,27 @@ elif st.session_state.etape == "fin":
     
     for calc in calculs_session:
         cid = calc['id']
-        rep_eleve = str(st.session_state.reponses_eleve.get(cid, "")).strip().replace(",", ".")
-        attendu = str(calc["reponse"])
+        val_eleve = st.session_state.reponses_eleve.get(cid, None)
+        attendu = float(calc["reponse"])
         
         est_correct = False
-        try:
-            if float(rep_eleve) == float(attendu):
-                est_correct = True
-        except ValueError:
-            if rep_eleve.lower() == attendu.lower():
-                est_correct = True
+        if val_eleve is not None:
+            try:
+                if float(val_eleve) == attendu:
+                    est_correct = True
+            except ValueError:
+                pass
                 
+        # Format d'affichage de la réponse de l'élève
+        if val_eleve is not None:
+            rep_texte = str(val_eleve)
+        else:
+            rep_texte = "Aucune (Passée)"
+            
         st.markdown(f"**Niveau {calc['niveau']} — Calcul : {calc['question']}**")
         col1, col2 = st.columns(2)
-        col1.metric("Ta réponse", rep_eleve if rep_eleve else "Aucune (Passée)")
-        col2.metric("Réponse attendue", attendu)
+        col1.metric("Ta réponse", rep_texte)
+        col2.metric("Réponse attendue", str(calc["reponse"]))
         
         if est_correct:
             st.caption("Correct (+1 pt)")
