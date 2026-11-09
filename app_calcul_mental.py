@@ -126,12 +126,15 @@ if mode_vue == "Smartphone Élève":
         
         if st.button("Lancer le Défi", type="primary", use_container_width=True):
             if mot_de_passe.strip():
+                # Normalisation du mot de passe en minuscules pour ne pas être sensible à la casse
+                mdp_clean = mot_de_passe.strip().lower()
                 st.session_state.mode_jeu = f"Défi ({mot_de_passe.strip()})"
                 session_calculs = list(CALCULS)
-                # La seed garantit que tous ceux qui entrent ce mot de passe ont le même ordre
-                random.seed(mot_de_passe.strip())
+                
+                random.seed(mdp_clean)
                 random.shuffle(session_calculs)
                 random.seed() # Réinitialisation
+                
                 st.session_state.calculs_session = session_calculs
                 st.session_state.current_index = 0
                 st.session_state.reponses_eleve = {}
