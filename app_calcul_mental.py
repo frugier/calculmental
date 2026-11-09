@@ -1,48 +1,149 @@
 import json
+import random
+import time
 import streamlit as st
 
 # Configuration de la page
 st.set_page_config(page_title="Test de Calcul Mental", layout="centered")
 
-# Chargement automatique des calculs depuis le fichier JSON
+# Chargement automatique des calculs depuis le fichier JSON[cite: 2]
 @st.cache_data
 def charger_calculs():
     with open("calculs.json", "r", encoding="utf-8") as f:
         return json.load(f)
 
 CALCULS = charger_calculs()
+DUREE_SECONDES = 120  # 2 minutes
 
 # Initialisation des états de session
-if "soumis" not in st.session_state:
-    st.session_state.soumis = False
-if "score" not in st.session_state:
-    st.session_state.score = 0
-if "reponses_eleve" not in st.session_state:
-    st.session_state.reponses_eleve = {}
+if "etape" not in st.session_state:
+    st.session_state.etape = "accueil"
 if "pseudo" not in st.session_state:
     st.session_state.pseudo = ""
+if "current_index" not in st.session_state:
+    st.session_state.current_index = 0
+if "reponses_eleve" not in st.session_state:
+    st.session_state.reponses_eleve = {}
+if "calculs_session" not in st.session_state:
+    st.session_state.calculs_session = []
+if "start_time" not in st.session_state:
+    st.session_state.start_time = None
 
-st.title("Test de Calcul Mental")
-st.divider()
+# Fragment pour actualiser le timer chaque seconde
+@st.fragment(run_every=1)
+def timer_widget():
+    if st.session_state.etape == "test" and st.session_state.start_time:
+        ecoule = time.time() - st.session_state.start_time
+        restant = int(DUREE_SECONDES - ecoule)
+        if restant <= 0:
+            st.session_state.etape = "fin"
+            st.rerun()
+        else:
+            mins = restant // 60
+            secs = restant % 60
+            st.markdown(f"**Temps restant : {mins:02d}:{secs:02d}**")
 
-# CAS 1 : L'ÉLÈVE A SOUMIS SES RÉPONSES (AFFICHAGE DU RÉSULTAT ET DE LA CORRECTION)
-if st.session_state.soumis:
-    nom_affiche = st.session_state.pseudo if st.session_state.pseudo else "Anonyme"
+# ---------------------------------------------------------
+# ÉTAPE 1 : ACCUEIL / IDENTIFICATION
+# ---------------------------------------------------------
+if st.session_state.etape == "accueil":
+    st.title("Test de Calcul Mental")
+    st.divider()
+    st.write("Le test dure 2 minutes. Les questions s'enchaînent une par une de manière aléatoire. Vous pouvez passer une question si vous ne savez pas.")
     
-    st.header("Résultat de l'évaluation")
-    st.write(f"Candidat : **{nom_affiche}**")
-    st.success(f"Score final : **{st.session_state.score} / {len(CALCULS)}**")
+    nom = st.text_input("Entre ton prénom (laisse vide pour rester anonyme) :")
+    
+    if st.button("Commencer le test", type="primary", use_container_width=True):
+        st.session_state.pseudo = nom.strip() if nom.strip() else "Anonyme"
+        st.session_state.current_index = 0
+        st.session_state.reponses_eleve = {}
+        
+        # Copie et mélange aléatoire des questions pour cette session
+        session_calculs = list(CALCULS)
+        random.shuffle(session_calculs)
+        st.session_state.calculs_session = session_calculs
+        
+        st.session_state.start_time = time.time()
+        st.session_state.etape = "test"
+        st.rerun()
+
+# ---------------------------------------------------------
+# ÉTAPE 2 : PASSAGE DU TEST (QUESTION PAR QUESTION)
+# ---------------------------------------------------------
+elif st.session_state.etape == "test":
+    timer_widget()
+    
+    calculs_session = st.session_state.calculs_session
+    idx = st.session_state.current_index
+    
+    if idx >= len(calculs_session):
+        st.session_state.etape = "fin"
+        st.rerun()
+        
+    calc = calculs_session[idx]
+    
+    st.write(f"Question {idx + 1} / {len(calculs_session)}")
+    st.progress((idx) / len(calculs_session))
+    st.divider()
+    
+    # Affichage du calcul en grand format au centre
+    st.markdown(f"<h1 style='text-align: center; font-size: 2.5rem;'>{calc['question']} = ?</h1>", unsafe_allow_html=True)
+    st.write("")
+    
+    # Formulaire de réponse avec boutons Valider et Passer
+    with st.form(key=f"form_q_{idx}"):
+        reponse_saisie = st.text_input("Ta réponse :", key=f"input_q_{calc['id']}", label_visibility="collapsed")
+        
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            btn_valider = st.form_submit_button("Valider", type="primary", use_container_width=True)
+        with col_btn2:
+            btn_passer = st.form_submit_button("Passer", use_container_width=True)
+        
+    if btn_valider:
+        st.session_state.reponses_eleve[calc['id']] = reponse_saisie
+        st.session_state.current_index += 1
+        if st.session_state.current_index >= len(calculs_session):
+            st.session_state.etape = "fin"
+        st.rerun()
+    elif btn_passer:
+        st.session_state.reponses_eleve[calc['id']] = ""  # Vide si passé
+        st.session_state.current_index += 1
+        if st.session_state.current_index >= len(calculs_session):
+            st.session_state.etape = "fin"
+        st.rerun()
+
+# ---------------------------------------------------------
+# ÉTAPE 3 : RÉSULTAT ET CORRECTION DÉTAILLÉE
+# ---------------------------------------------------------
+elif st.session_state.etape == "fin":
+    st.title("Résultat de l'évaluation")
+    st.divider()
+    
+    calculs_session = st.session_state.calculs_session
+    score = 0
+    for calc in calculs_session:
+        cid = calc['id']
+        rep = str(st.session_state.reponses_eleve.get(cid, "")).strip().replace(",", ".")
+        attendu = str(calc["reponse"])
+        try:
+            if float(rep) == float(attendu):
+                score += 1
+        except ValueError:
+            if rep.lower() == attendu.lower():
+                score += 1
+                
+    st.write(f"Candidat : **{st.session_state.pseudo}**")
+    st.success(f"Score final : **{score} / {len(calculs_session)}**")
     st.divider()
     
     st.subheader("Correction détaillée")
     
-    for calc in CALCULS:
-        calc_id = calc["id"]
-        # Récupération de la réponse élève en remplaçant la virgule par un point pour les décimaux
-        rep_eleve = st.session_state.reponses_eleve.get(calc_id, "").strip().replace(",", ".")
+    for calc in calculs_session:
+        cid = calc['id']
+        rep_eleve = str(st.session_state.reponses_eleve.get(cid, "")).strip().replace(",", ".")
         attendu = str(calc["reponse"])
         
-        # Vérification robuste (comparaison numérique si possible, sinon textuelle)
         est_correct = False
         try:
             if float(rep_eleve) == float(attendu):
@@ -50,10 +151,10 @@ if st.session_state.soumis:
         except ValueError:
             if rep_eleve.lower() == attendu.lower():
                 est_correct = True
-        
+                
         st.markdown(f"**Niveau {calc['niveau']} — Calcul : {calc['question']}**")
         col1, col2 = st.columns(2)
-        col1.metric("Ta réponse", rep_eleve if rep_eleve else "Aucune")
+        col1.metric("Ta réponse", rep_eleve if rep_eleve else "Aucune (Passée)")
         col2.metric("Réponse attendue", attendu)
         
         if est_correct:
@@ -63,45 +164,10 @@ if st.session_state.soumis:
         st.divider()
         
     if st.button("Recommencer un test", use_container_width=True):
-        st.session_state.soumis = False
-        st.session_state.score = 0
-        st.session_state.reponses_eleve = {}
+        st.session_state.etape = "accueil"
         st.session_state.pseudo = ""
-        st.rerun()
-
-# CAS 2 : L'ÉLÈVE PASSE LE TEST
-else:
-    st.subheader("Identification")
-    st.session_state.pseudo = st.text_input("Entre ton prénom (laisse vide si tu préfères rester anonyme) :")
-    st.divider()
-    
-    st.subheader("Série de calculs")
-    st.write("Résous les calculs suivants de tête, sans calculatrice :")
-    
-    user_answers = {}
-    with st.form("form_calcul_mental"):
-        for calc in CALCULS:
-            user_answers[calc["id"]] = st.text_input(
-                f"Calcul {calc['id']} (Niveau {calc['niveau']}) : {calc['question']} =",
-                key=f"calc_{calc['id']}"
-            )
-        
-        btn_valider = st.form_submit_button("Valider et voir la correction", type="primary", use_container_width=True)
-        
-    if btn_valider:
-        score_total = 0
-        for calc in CALCULS:
-            rep = user_answers.get(calc["id"], "").strip().replace(",", ".")
-            attendu = str(calc["reponse"])
-            
-            try:
-                if float(rep) == float(attendu):
-                    score_total += 1
-            except ValueError:
-                if rep.lower() == attendu.lower():
-                    score_total += 1
-                
-        st.session_state.score = score_total
-        st.session_state.reponses_eleve = user_answers
-        st.session_state.soumis = True
+        st.session_state.current_index = 0
+        st.session_state.reponses_eleve = {}
+        st.session_state.calculs_session = []
+        st.session_state.start_time = None
         st.rerun()
