@@ -49,7 +49,7 @@ def timer_widget():
 if st.session_state.etape == "accueil":
     st.title("Test de Calcul Mental")
     st.divider()
-    st.write("Le test dure 2 minutes. Les questions s'enchaînent une par une de manière aléatoire. Vous pouvez passer une question si vous ne savez pas.")
+    st.write("Le test dure 2 minutes. Enchaîne le plus de calculs possible le plus vite possible !")
     
     nom = st.text_input("Entre ton prénom (laisse vide pour rester anonyme) :")
     
@@ -58,7 +58,7 @@ if st.session_state.etape == "accueil":
         st.session_state.current_index = 0
         st.session_state.reponses_eleve = {}
         
-        # Copie et mélange aléatoire des questions pour cette session
+        # Copie et mélange aléatoire des calculs pour cette session
         session_calculs = list(CALCULS)
         random.shuffle(session_calculs)
         st.session_state.calculs_session = session_calculs
@@ -82,15 +82,10 @@ elif st.session_state.etape == "test":
         
     calc = calculs_session[idx]
     
-    st.write(f"Question {idx + 1} / {len(calculs_session)}")
-    st.progress((idx) / len(calculs_session))
-    st.divider()
+    # Affichage épuré sans barre de progression, orienté hauteur pour le mobile
+    st.write(f"Calcul n°{idx + 1}")
+    st.markdown(f"<h1 style='text-align: center; font-size: 2.2rem; margin-top: 10px; margin-bottom: 10px;'>{calc['question']} = ?</h1>", unsafe_allow_html=True)
     
-    # Affichage du calcul en grand format au centre
-    st.markdown(f"<h1 style='text-align: center; font-size: 2.5rem;'>{calc['question']} = ?</h1>", unsafe_allow_html=True)
-    st.write("")
-    
-    # st.number_input avec value=None force l'affichage du pavé numérique sur smartphone
     with st.form(key=f"form_q_{idx}"):
         reponse_saisie = st.number_input(
             "Ta réponse :", 
@@ -128,12 +123,15 @@ elif st.session_state.etape == "fin":
     
     calculs_session = st.session_state.calculs_session
     score = 0
+    nb_repondus = 0
+    
     for calc in calculs_session:
         cid = calc['id']
         val_eleve = st.session_state.reponses_eleve.get(cid, None)
         attendu = float(calc["reponse"])
         
         if val_eleve is not None:
+            nb_repondus += 1
             try:
                 if float(val_eleve) == attendu:
                     score += 1
@@ -141,12 +139,14 @@ elif st.session_state.etape == "fin":
                 pass
                 
     st.write(f"Candidat : **{st.session_state.pseudo}**")
-    st.success(f"Score final : **{score} / {len(calculs_session)}**")
+    st.success(f"Score final : **{score} / {nb_repondus}** (traités sur {len(calculs_session)} vus)")
     st.divider()
     
     st.subheader("Correction détaillée")
     
-    for calc in calculs_session:
+    # On affiche uniquement les questions que l'élève a eu le temps de voir/traiter
+    for i in range(st.session_state.current_index):
+        calc = calculs_session[i]
         cid = calc['id']
         val_eleve = st.session_state.reponses_eleve.get(cid, None)
         attendu = float(calc["reponse"])
@@ -159,13 +159,9 @@ elif st.session_state.etape == "fin":
             except ValueError:
                 pass
                 
-        # Format d'affichage de la réponse de l'élève
-        if val_eleve is not None:
-            rep_texte = str(val_eleve)
-        else:
-            rep_texte = "Aucune (Passée)"
+        rep_texte = str(val_eleve) if val_eleve is not None else "Aucune (Passée)"
             
-        st.markdown(f"**Niveau {calc['niveau']} — Calcul : {calc['question']}**")
+        st.markdown(f"**Calcul : {calc['question']}**")
         col1, col2 = st.columns(2)
         col1.metric("Ta réponse", rep_texte)
         col2.metric("Réponse attendue", str(calc["reponse"]))
